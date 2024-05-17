@@ -5,11 +5,24 @@ import numpy as np
 from tqdm import tqdm
 
 def metropolis_hastings(log_target, proposal, data, init, num_samples, burn_in=0, thin=1, rng_key=None, savef=lambda x: x):
-    """MCMC using Metropolis-Hastings algorithm."""
+    """ MCMC using Metropolis-Hastings algorithm
+
+    :param log_target: Function returning the logarithm of the target distribution
+    :param proposal: Function returning a sample from the proposal distribution
+    :param data: Observed data
+    :param init: Initial state
+    :param num_samples: Number of samples to draw
+    :param burn_in: Number of samples to discard at the beginning
+    :param thin: Thinning rate
+    :param rng_key: Random number generator key
+    :param savef: Function to save the state
+    :return: List of log likelihoods and samples
+    """
     if rng_key is None:
         rng_key = jax.random.PRNGKey(0)
 
-    current_state = init
+    rng_key, subkey = jax.random.split(rng_key)
+    current_state = proposal(data, init, subkey)
     log_likelihood_current = log_target(data,current_state)
     log_likelihoods = []
     samples = []
