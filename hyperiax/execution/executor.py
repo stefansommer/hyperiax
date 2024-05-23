@@ -102,7 +102,7 @@ class OrderedExecutor(ABC):
                     if not node.children: continue
                     fuse_data = dict_collate([child.up_val for child in node.children])
                     fuse_data = {f'child_{k}':v for k,v in fuse_data.items()}
-                    fuse_result = self.model.fuse(**node.data, **fuse_data)
+                    fuse_result = self.model.fuse(**node.data, **fuse_data, params=params)
 
                     node.data = {**node.data, **fuse_result}
 

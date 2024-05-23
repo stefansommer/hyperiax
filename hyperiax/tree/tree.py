@@ -159,6 +159,10 @@ class HypTree:
         from .plot_utils import plot_tree_2d_
         plot_tree_2d_(self, ax, selector)
 
+    def plot_tree_3d(self, ax=None, selector=None):
+        from .plot_utils import plot_tree_3d_
+        plot_tree_3d_(self, ax, selector)
+
     def plot_tree(self, ax=None,inc_names=False):
         tree = self.copy()
         from .plot_utils import plot_tree_

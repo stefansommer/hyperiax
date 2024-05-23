@@ -1,8 +1,11 @@
 # Functions for plotting data and tree
 import numpy as np
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import pyplot as plt
+from matplotlib import patches as mpatch
 
 #####################################################################################################
-# 2d plot of data points in a 
+# 2d and 3d plot of data points in a 
 
 def plot_tree_2d_(self, ax=None, selector=None):
     from matplotlib import pyplot as plt
@@ -24,15 +27,51 @@ def plot_tree_2d_(self, ax=None, selector=None):
         for i, level in enumerate(levels):
             for node in level:
                 dat = selector(node.data) if selector else node.data
+                dat = dat if len(dat.shape) == 1 else dat[-1] # possibly to last value if dat is a trajectory of values
                 if node.children:
                     for child in node.children:
                         cdat = selector(child.data) if selector else child.data
-                        ax.arrow(*dat, *(cdat-dat), width=0.01, length_includes_head=True, color='gray')
+                        if len(cdat.shape) == 1:
+                            ax.arrow(*dat, *(cdat-dat), width=0.01, length_includes_head=True, color='gray')
+                        elif len(cdat.shape) == 2:
+                            ax.plot(cdat[:,0], cdat[:,1], color=cmap(i/len(levels)))
                 ax.scatter(*dat, color=cmap(i/len(levels)))
                 if 'name' in node.data.keys():
                     ax.annotate(node.data['name'], dat, xytext=(5,5), textcoords='offset pixels')
 
         handles = [mpatch.Patch(color=cmap(i/len(levels)), label = f'{i+1}') for i in range(len(levels))]
+        legend = ax.legend(handles=handles, title="Levels")
+        ax.add_artist(legend)
+        ax.grid(True)
+
+def plot_tree_3d_(self, ax=None, selector=None):
+
+    tree = 'partial'
+    for node in self.iter_bfs():
+        if node.data == None: break
+    else:
+        tree = 'full'
+
+    cmap = plt.cm.ocean
+
+    if ax == None:
+        fig = plt.figure(figsize=(10,8))
+        ax = fig.add_subplot(111, projection='3d')
+    if tree == 'full':
+        levels = list(self.iter_levels())
+
+        for i, level in enumerate(levels):
+            for node in level:
+                dat = selector(node.data) if selector else node.data
+                if node.children:
+                    for child in node.children:
+                        cdat = selector(child.data) if selector else child.data
+                        ax.quiver(*dat, *(cdat-dat), length=1.0, arrow_length_ratio=0.1, color='gray')
+                ax.scatter(*dat, color=cmap(i/len(levels)))
+                if 'name' in node.data.keys():
+                    ax.text(*dat, node.data['name'], color='black')
+
+        handles = [mpatch.Patch(color=cmap(i/len(levels)), label=f'{i+1}') for i in range(len(levels))]
         legend = ax.legend(handles=handles, title="Levels")
         ax.add_artist(legend)
         ax.grid(True)
@@ -138,13 +177,23 @@ def plot_tree_shape(self,ax=None,inc_names=False,shape="landmarks"):
     points = scale_points(leaf.data[shape].reshape((-1,2)),[(x-dis,y-dis),(x+dis,y+dis)])
     for point in points:
         ax.plot(*point, 'ro')
+    leaf.data['temp_plotted_point'] = np.array(points)
         
-    draw_box(ax, x, y, dis)
+    plot_trajectory = len(leaf.data[shape]) > 1
+    if not plot_trajectory:
+        draw_box(ax, x, y, dis) # regular case (no trajectory)
 
-   # ax.axis('off')
-    for leaf in self.iter_bfs():
-        if len(leaf.children) != 0:
-            plot_node_shape(leaf,ax,inc_names,dis,shape)
+    # ax.axis('off')
+    n_levels = len(list(self.iter_levels()))
+    for i, level in enumerate(self.iter_levels()):
+        for node in level:
+            if len(node.children) != 0:
+                plot_node_shape(node,ax,inc_names,dis,shape,i/n_levels)
+
+    cmap = plt.cm.ocean
+    handles = [mpatch.Patch(color=cmap(i/n_levels), label = f'{i+1}') for i in range(n_levels)]
+    legend = ax.legend(handles=handles, title="Levels")
+    ax.add_artist(legend)
 
 def estimate_position_shape(self):
     """ Estimate the x and y coordinates of each point """
@@ -210,26 +259,25 @@ def scale_points(points, bounding_box, padding=0.1):
     box_range_y = box_max_y - box_min_y
 
     # Find the min and max x, y in the points
-    min_x = min(point[0] for point in points)
-    max_x = max(point[0] for point in points)
-    min_y = min(point[1] for point in points)
-    max_y = max(point[1] for point in points)
+    points=np.array(points)
+    min_x,min_y=np.min(points,axis=0)
+    max_x,max_y=np.max(points,axis=0)
 
     # Calculate the range of the points
     range_x = max_x - min_x
     range_y = max_y - min_y
 
     # Scale the points to fit inside the bounding box
-    scaled_points = []
-    for x, y in points:
-        # Avoid division by zero
-        scaled_x = box_min_x + ((x - min_x) / range_x) * box_range_x
-        scaled_y = box_min_y + ((y - min_y) / range_y) * box_range_y
+    min_x,min_y = np.min(points,axis=0)
+    max_x,max_y = np.max(points,axis=0)
+    range_x = max_x-min_x
+    range_y = max_y-min_y
 
+    # Avoid division by zero
+    scaled_x = box_min_x+((points[:,0]-min_x)/range_x)*box_range_x
+    scaled_y = box_min_y+((points[:,1]-min_y)/range_y)*box_range_y
 
-        scaled_points.append((scaled_x, scaled_y))
-
-    return scaled_points
+    return np.column_stack((scaled_x,scaled_y))
 
 
 def draw_box(ax, x, y, dis):
@@ -242,31 +290,53 @@ def draw_box(ax, x, y, dis):
     
 
 
-def plot_node_shape(parent, ax, inc_names, dis,shape):
+def plot_node_shape(parent, ax, inc_names, dis,shape,level):
     from matplotlib import pyplot as plt
 
     x0 = parent.data["x_temp"]
     y0 = parent.data["y_temp"]
 
+    cmap = plt.cm.ocean
+
     for child in parent.children:
         x = child.data["x_temp"]
         y = child.data["y_temp"]
 
-        # Draw horizontal and vertical lines
-        if len(parent.children) > 1:
-            if x<x0-.5*dis or x>x0+.5*dis:
-                ax.plot([x,x0-dis if x<x0 else x0+dis], [y0,y0],'k-')
-            ax.plot([x,x],[y0 if x<x0-.5*dis or x>x0+.5*dis else y0-dis,y+dis],'k')      
+        # plot just point configuration of entire trajectory
+        plot_trajectory = len(child.data[shape].shape) > 1
+
+        if not plot_trajectory:
+            # Draw horizontal and vertical lines
+            if len(parent.children) > 1:
+                if x<x0-.5*dis or x>x0+.5*dis:
+                    ax.plot([x,x0-dis if x<x0 else x0+dis], [y0,y0],'k-')
+                ax.plot([x,x],[y0 if x<x0-.5*dis or x>x0+.5*dis else y0-dis,y+dis],'k')      
+            else:
+                ax.plot([x,x],[y0-dis,y+dis],'k')
+
+            # Draw box for shape
+            draw_box(ax, x, y, dis)
+
+            # Plot points
+            points = scale_points(child.data[shape].reshape((-1,2)),[(x-dis,y-dis),(x+dis,y+dis)])
+            ax.scatter(points[:,0], points[:,1],color='r',marker='.')
+            
+            child.data['temp_plotted_point'] = points[-1]
         else:
-            ax.plot([x,x],[y0-dis,y+dis],'k')
-
-        # Draw box for shape
-        draw_box(ax, x, y, dis)
-
-        # Plot points
-        points = scale_points(child.data[shape].reshape((-1,2)),[(x-dis,y-dis),(x+dis,y+dis)])
-        for point in points:
-            ax.plot(*point, 'ro')
+            # Plot points
+            points = scale_points(child.data[shape].reshape((-1,2)),[(x-dis,y-dis),(x+dis,y+dis)]).reshape((child.data[shape].shape[0],-1,2))
+            if 'temp_plotted_point' in parent.data:
+                # linearly interpolate
+                child_first_point = points[0]
+                child_last_point = points[-1]
+                parent_last_point =parent.data['temp_plotted_point']
+                num_points = child.data[shape].shape[0]
+                interpolated_array = np.linspace(parent_last_point-child_first_point, np.zeros_like(child_last_point), num_points)
+                points = points+interpolated_array
+            for i in range(points.shape[1]):
+                ax.plot(points[:,i,0], points[:,i,1],color=cmap(level))
+                ax.plot(*points[-1,i], 'ro')
+            child.data['temp_plotted_point'] = points[-1]
 
         # Include text
         if inc_names and child.name is not None:
