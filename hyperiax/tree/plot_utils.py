@@ -3,6 +3,7 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib import pyplot as plt
 from matplotlib import patches as mpatch
+import plotly.graph_objects as go
 
 #####################################################################################################
 # 2d and 3d plot of data points in a 
@@ -195,6 +196,54 @@ def plot_tree_shape(self,ax=None,inc_names=False,shape="landmarks"):
     legend = ax.legend(handles=handles, title="Levels")
     ax.add_artist(legend)
 
+def plot_tree_shape_3d(self,fig=None,inc_names=False,shape="landmarks",scale=1.): 
+    import plotly.graph_objects as go
+    """Plot the tree using plotly"""
+ 
+    if fig == None:
+        fig = go.Figure()
+        fig.update_layout(
+            scene=dict(
+                xaxis=dict(visible=False), 
+                yaxis=dict(visible=False), 
+                zaxis=dict(visible=False)
+            ),
+            showlegend=False,  # Disable legends
+            #width = 1000,
+            height = 800,
+        )
+
+    # simple placement in xz plane, does not take edge lengths into account
+    x_span = 1.5*len(list(self.iter_leaves()))
+    n_levels = len(list(self.iter_levels()))
+    level_z = 2.
+    def set_pos(node,childi,nchildren,x_span):
+        if node.parent is not None:
+            x = node.parent.data['p_temp'][0] + (childi-(nchildren-1)/2)*x_span
+            y = 0.
+            z = node.parent.data['p_temp'][2] - level_z
+        else:
+            x = 0.; y = 0.; z = 0.
+        node.data['p_temp'] = np.array([x,y,z])
+        for i,child in enumerate(node.children):
+            set_pos(child,i,len(node.children),x_span/len(node.children))
+    tree = self
+    set_pos(tree.root,0,len(tree.root.children),x_span)
+
+    ####### DO all for root 
+    points = scale*tree.root.data[shape].reshape((-1,3))
+    fig.add_trace(go.Scatter3d(x=points[:,0], y=points[:,1], z=points[:,2], mode='markers', marker=dict(color='blue')))
+    tree.root.data['temp_plotted_point'] = points
+        
+    n_levels = len(list(tree.iter_levels()))
+    for i, level in enumerate(tree.iter_levels()):
+        for node in level:
+            if len(node.children) != 0:
+                plot_node_shape_3d(node,fig,shape,scale,i/n_levels)
+    fig.update_layout(scene_aspectmode='data')
+    return fig
+
+
 def estimate_position_shape(self):
     """ Estimate the x and y coordinates of each point """
     
@@ -321,7 +370,7 @@ def plot_node_shape(parent, ax, inc_names, dis,shape,level):
             points = scale_points(child.data[shape].reshape((-1,2)),[(x-dis,y-dis),(x+dis,y+dis)])
             ax.scatter(points[:,0], points[:,1],color='r',marker='.')
             
-            child.data['temp_plotted_point'] = points[-1]
+            child.data['temp_plotted_point'] = points
         else:
             # Plot points
             points = scale_points(child.data[shape].reshape((-1,2)),[(x-dis,y-dis),(x+dis,y+dis)]).reshape((child.data[shape].shape[0],-1,2))
@@ -344,5 +393,36 @@ def plot_node_shape(parent, ax, inc_names, dis,shape,level):
             ax.text(x, y-dis, child.name, fontdict=None, rotation=rotation, va="top", ha="center")
 
 
+def plot_node_shape_3d(parent,fig,shape,scale,level):
+    cmap = plt.cm.ocean
 
-      
+    for child in parent.children:
+        p = child.data['p_temp']
+
+        # plot just point configuration of entire trajectory
+        plot_trajectory = len(child.data[shape].shape) > 1
+
+        if not plot_trajectory:
+            # no trajectory
+            point = scale*child.data[shape].reshape((-1,3)) + p[None,:]
+            if 'temp_plotted_point' in parent.data:
+                points = np.vstack((parent.data['temp_plotted_point'],point)).reshape([2,-1,3])
+            else:
+                points = point.reshape([1,-1,3])
+        else:
+            # trajectory
+            points = scale*child.data[shape].reshape((child.data[shape].shape[0],-1,3)) + p[None,None,:]
+            if 'temp_plotted_point' in parent.data:
+                # linearly interpolate
+                child_first_point = points[0]
+                child_last_point = points[-1]
+                parent_last_point = parent.data['temp_plotted_point']
+                num_points = child.data[shape].shape[0]
+                interpolated_array = np.linspace(parent_last_point-child_first_point, np.zeros_like(child_last_point), num_points)
+                points = points+interpolated_array
+
+        for i in range(points.shape[1]):
+            fig.add_trace(go.Scatter3d(x=points[:,i,0], y=points[:,i,1], z=points[:,i,2], mode='lines', line=dict(color=cmap(level))))
+            fig.add_trace(go.Scatter3d(x=[points[-1,i,0]], y=[points[-1,i,1]], z=[points[-1,i,2]], mode='markers', marker=dict(color='red', size=6)))
+        child.data['temp_plotted_point'] = points[-1]
+
