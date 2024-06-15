@@ -196,7 +196,7 @@ def plot_tree_shape(self,ax=None,inc_names=False,shape="landmarks"):
     legend = ax.legend(handles=handles, title="Levels")
     ax.add_artist(legend)
 
-def plot_tree_shape_3d(self,fig=None,inc_names=False,shape="landmarks",scale=1.): 
+def plot_tree_shape_3d(self,fig=None,inc_names=False,shape="landmarks",scale=1.,mesh=None): 
     import plotly.graph_objects as go
     """Plot the tree using plotly"""
  
@@ -232,14 +232,17 @@ def plot_tree_shape_3d(self,fig=None,inc_names=False,shape="landmarks",scale=1.)
 
     ####### DO all for root 
     points = scale*tree.root.data[shape].reshape((-1,3))
-    fig.add_trace(go.Scatter3d(x=points[:,0], y=points[:,1], z=points[:,2], mode='markers', marker=dict(color='blue')))
+    if mesh is None:
+        fig.add_trace(go.Scatter3d(x=points[:,0], y=points[:,1], z=points[:,2], mode='markers', marker=dict(color='blue')))
+    else:
+        plot_mesh_plotly(mesh,points,fig)
     tree.root.data['temp_plotted_point'] = points
         
     n_levels = len(list(tree.iter_levels()))
     for i, level in enumerate(tree.iter_levels()):
         for node in level:
             if len(node.children) != 0:
-                plot_node_shape_3d(node,fig,shape,scale,i/n_levels)
+                plot_node_shape_3d(node,fig,shape,scale,i/n_levels,mesh=mesh)
     fig.update_layout(scene_aspectmode='data')
     return fig
 
@@ -393,7 +396,7 @@ def plot_node_shape(parent, ax, inc_names, dis,shape,level):
             ax.text(x, y-dis, child.name, fontdict=None, rotation=rotation, va="top", ha="center")
 
 
-def plot_node_shape_3d(parent,fig,shape,scale,level):
+def plot_node_shape_3d(parent,fig,shape,scale,level,mesh=None):
     cmap = plt.cm.ocean
 
     for child in parent.children:
@@ -423,6 +426,16 @@ def plot_node_shape_3d(parent,fig,shape,scale,level):
 
         for i in range(points.shape[1]):
             fig.add_trace(go.Scatter3d(x=points[:,i,0], y=points[:,i,1], z=points[:,i,2], mode='lines', line=dict(color=cmap(level))))
-            fig.add_trace(go.Scatter3d(x=[points[-1,i,0]], y=[points[-1,i,1]], z=[points[-1,i,2]], mode='markers', marker=dict(color='red', size=6)))
+            if mesh is None:
+                fig.add_trace(go.Scatter3d(x=[points[-1,i,0]], y=[points[-1,i,1]], z=[points[-1,i,2]], mode='markers', marker=dict(color='red', size=6)))
+        if mesh is not None:
+            plot_mesh_plotly(mesh,points[-1],fig,edgecolor='red')
         child.data['temp_plotted_point'] = points[-1]
 
+def plot_mesh_plotly(mesh,points,fig,color='lightblue',edgecolor='blue'):
+    fig.add_trace(go.Mesh3d(x=points[:,0],y=points[:,1],z=points[:,2],i=mesh.faces[:,0],j=mesh.faces[:,1],k=mesh.faces[:,2],color=color,opacity=0.95))
+    edges = np.vstack([mesh.faces[:,[0,1]],mesh.faces[:,[1,2]],mesh.faces[:,[2,0]]])
+    x_edges = np.hstack([points[edges[:,0],0],points[edges[:,1],0],np.full(edges.shape[0],None)])
+    y_edges = np.hstack([points[edges[:,0],1],points[edges[:,1],1],np.full(edges.shape[0],None)])
+    z_edges = np.hstack([points[edges[:,0],2],points[edges[:,1],2],np.full(edges.shape[0],None)])
+    fig.add_trace(go.Scatter3d(x=x_edges,y=y_edges,z=z_edges,mode='lines',line=dict(color=edgecolor,width=2)))
