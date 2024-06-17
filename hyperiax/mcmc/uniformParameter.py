@@ -14,7 +14,7 @@ class UniformParameter(Parameter):
         if self.keep_constant:
             return self
 
-        return UniformParameter(jax.random.uniform(key, shape=self.value.shape, minval=self.min, maxval=self.max), self.min, self.max, self.keep_constant)
+        return UniformParameter(jax.random.uniform(key, minval=self.min, maxval=self.max), self.min, self.max, self.keep_constant)
     
     def update(self, value, accepted): 
         if accepted:
